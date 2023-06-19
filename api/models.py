@@ -1,15 +1,24 @@
 from django.db import models
-from utils.models import TimeStampedModel
+from django.conf import settings
+from django.contrib.auth.models import User
+
+
 # Create your models here.
+class CustomAPI(models.Model):
+    path = models.CharField(max_length=100)
+    view_class = models.CharField(max_length=100)
+    name = models.CharField(max_length=100)
 
-class Facematching(TimeStampedModel):
-    user=models.CharField(max_length=200,null =True)
-    match_percentage=models.FloatField(null=True)
-    image1 = models.ImageField(upload_to='facematch/')
-    image2 = models.ImageField(upload_to='facematch/')
-    message=models.CharField(max_length=200, null=True) 
+    def __str__(self):
+        return self.name
 
-class StringMatching(TimeStampedModel):
-    name1=models.CharField(max_length=200,null=True)
-    name2=models.CharField(max_length=200,null=True)
-    match_percentage=models.FloatField(null=True)
+class UserSelectedAPI(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    api = models.ManyToManyField(CustomAPI, related_name='selected_apis')
+
+    def __str__(self):
+        return f"User: {self.user}, APIs: {self.api.count()}"
+
+
+class UserUrlpatternList:
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)

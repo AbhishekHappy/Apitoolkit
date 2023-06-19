@@ -1,117 +1,116 @@
-from django.shortcuts import render
-from rest_framework.response import Response
-from django.shortcuts import render
-from rest_framework import generics, status
-from utils.restful_response import send_response
-import face_recognition
-from fuzzywuzzy import fuzz
-from api.models import Facematching,StringMatching
-from api.serializer import FaceMatchingSerializer, StringMatchingSerializer
+
+
 # Create your views here.
+from django.shortcuts import render
+from rest_framework.views import APIView
+from rest_framework import generics
 
-class FacematchingView(generics.CreateAPIView):
-    queryset=Facematching.objects.all()
-    serializer_class = FaceMatchingSerializer
+from api.models import CustomAPI,UserSelectedAPI
+from api.serializer import CustomAPISerializer,UserSelectedAPISerializer
+# Create your views here.
+from rest_framework import viewsets
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from drf_yasg.utils import swagger_auto_schema
+from rest_framework import generics, status
+from rest_framework.response import Response
 
 
-    def post(self,request):
-        face_matching=Facematching()
-        image1 = face_recognition.load_image_file(request.FILES.get('image1'))
-        image2 = face_recognition.load_image_file(request.FILES.get('image2'))
+
+class APIViewSet(viewsets.ModelViewSet):
+    queryset = CustomAPI.objects.all()
+    serializer_class = CustomAPISerializer
+    http_method_names = ['get']  # Only allow the GET method for listing
+
+    @swagger_auto_schema()
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
     
-        face_matching.image1=request.data.get("image1")
-        face_matching.image2=request.data.get("image2")
 
-        # Detect the faces in each image
-        face_locations1 = face_recognition.face_locations(image1)
-        face_encodings1 = face_recognition.face_encodings(image1, face_locations1)
-        face_locations2 = face_recognition.face_locations(image2)
-        face_encodings2 = face_recognition.face_encodings(image2, face_locations2)
 
-        # Compare the faces
-        if len(face_encodings1) > 0 and len(face_encodings2) > 0:
-            face_encoding1 = face_encodings1[0]
-            face_encoding2 = face_encodings2[0]
-            face_distances = face_recognition.face_distance([face_encoding1], face_encoding2)
-            match_percentage = round((1 - face_distances[0]) * 100, 2)
+    
+class UserSelectedAPIView(generics.CreateAPIView):
+    serializer_class = UserSelectedAPISerializer
 
-            face_matching.match_percentage=match_percentage
-            
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
 
-            if match_percentage >= 50:
-                
-                response_data = {
-                    'match_percentage': match_percentage,
-                    'ui_message': 'The faces match with a certainty of {}%.'.format(match_percentage),
-                    'developer_message': 'The faces match with a certainty of {}%.'.format(match_percentage)
-                }
-                face_matching.message='The faces match with a certainty of {}%.'.format(match_percentage)
-                face_matching.save()
-                return Response(response_data, status=status.HTTP_201_CREATED)
-            else:
-                match_perc=100-match_percentage
-                
-                
-                response_data = {
-                    # 'match_percentage': match_perc,   
-                    'ui_message': 'The faces is not matching with a certainty of {}%. '.format(match_perc),
-                    'developer_message': 'The faces do not match.'
-                }
-                face_matching.message='The faces is not matching with a certainty of {}%. '.format(match_perc)
 
-                face_matching.save()
-                return Response(response_data, status=status.HTTP_200_OK)
-            
-            
-        else:
-            response_data = {
-                'match_percentage': None,
-                'ui_message': 'Could not detect faces in both images.',
-                'developer_message': 'Could not detect faces in both images.'
+    
+
+
+from django.http import JsonResponse
+from django.contrib.auth.decorators import login_required
+from .utils import get_user_api_list
+
+from django.urls import path
+from django.utils.module_loading import import_string
+from drf_yasg.views import get_schema_view as get_swagger_view
+from rest_framework.permissions import IsAuthenticated
+from drf_yasg import openapi
+from drf_yasg.views import get_schema_view
+from drf_yasg import renderers
+
+
+def generate_dynamic_urls(api_list):
+    api_patterns = []
+
+    for api_data in api_list:
+        api_id = api_data['api']
+        try:
+            api = CustomAPI.objects.get(id=api_id)
+            # print(api)
+            view_class = import_string(api.view_class)
+            api_pattern = {
+                'path': api.path,
+                'view_class': view_class.as_view(),
+                # 'view_class_name': view_class.__name__,
+                'name': api.name
             }
-            return Response(response_data, status=status.HTTP_400_BAD_REQUEST)
+            api_patterns.append(api_pattern)
+        except CustomAPI.DoesNotExist:
+            print(f"API with ID {api_id} does not exist")
+
+    return api_patterns
+
+
+
+# schema_view = get_swagger_view(
+#     openapi.Info(
+#         title="API Documentation",
+#         default_version='v1',
+#     ),
+#     public=False,
+#     permission_classes=[IsAuthenticated],
+    
+
+# )
+
+
+# class MyView(APIView):
+    
+#     def get(self, request, *args, **kwargs):
+#         user = request.user
+#         api_list = get_user_api_list(user)
+#         api_patterns = generate_dynamic_urls(api_list)
+#         print(api_patterns)
+#         serializer = CustomAPISerializer(api_list, many=True)
+#         schema_view.patterns = api_patterns
+#         schema = schema_view.get_schema(request=request)
+#         # return Response(schema)
+#         return Response(schema_view.with_ui(request, renderer='swagger'))
+import json
+
+class MyView(APIView):
+    def get(self, request, *args, **kwargs):
+        user = request.user
+        api_list = get_user_api_list(user)
+        api_patterns = generate_dynamic_urls(api_list)
+        print(api_patterns)
+        # serializer = CustomAPISerializer(api_list, many=True)
         
-class StringMatchingView(generics.CreateAPIView):
 
-    queryset=StringMatching.objects.all()
-    serializer_class=StringMatchingSerializer
-
-    def post(self,request ,*args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        name1=request.data.get("name1")
-        name2=request.data.get("name2")
-
-        if serializer.is_valid():
-            print("valid")
-            string_matching=StringMatching()
-            
-            string_matching.name1=name1
-            string_matching.name2=name2
-
-            similarity_ratio = fuzz.ratio(name1, name2)
-
-            string_matching.match_percentage=similarity_ratio
-            print(string_matching.name1,similarity_ratio)
-
-            string_matching.save()
-            
-            if similarity_ratio>70:
-                return send_response(
-                    status=status.HTTP_201_CREATED,
-                    ui_message='The names is matching with a certainty of {}%. '.format(similarity_ratio),
-                    developer_message="The names are matching"
-                )
-            else:
-                return send_response(
-                    status=status.HTTP_201_CREATED,
-                    ui_message='The names is not matching with a certainty of {}%. '.format(similarity_ratio),
-                    developer_message="The names are not matching correctly"
-                )
-            
-        else:
-            return send_response(
-                status=status.HTTP_400_BAD_REQUEST,
-                ui_message='Provided names are invalid or empty',
-                developer_message="Inavlid names "
-            )
+        return JsonResponse(json.dumps(api_patterns), safe=False)
 
